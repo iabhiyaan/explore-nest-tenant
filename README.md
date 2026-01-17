@@ -28,7 +28,7 @@
 ## Project setup
 
 ```bash
-$ npm install
+$ nvm use && npm install
 ```
 
 ## Environment Configuration
@@ -44,7 +44,7 @@ $ cp .env.example .env
 
 ```bash
 # Seed the database with initial data
-$ npm run seed
+$ nvm use && npm run seed
 ```
 
 ## Compile and run the project
@@ -54,7 +54,7 @@ $ npm run seed
 $ npm run start
 
 # watch mode
-$ npm run start:dev
+$ nvm use && npm run start:dev
 
 # production mode
 $ npm run start:prod
