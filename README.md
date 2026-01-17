@@ -31,6 +31,22 @@
 $ npm install
 ```
 
+## Environment Configuration
+
+```bash
+# Copy .env.example to .env
+$ cp .env.example .env
+
+# Update the .env file with your database credentials and other settings
+```
+
+## Database Setup
+
+```bash
+# Seed the database with initial data
+$ npm run seed
+```
+
 ## Compile and run the project
 
 ```bash
