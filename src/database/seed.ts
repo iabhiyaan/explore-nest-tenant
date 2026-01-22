@@ -12,6 +12,18 @@ const dataSource = new DataSource({
   logging: false,
 });
 
+interface SeedUser {
+  username: string;
+  password: string;
+  roleName: string;
+  tenantName?: string;
+  tenantId?: string | null;
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone?: string;
+}
+
 async function clearData() {
   console.log('🗑️  Clearing existing data...');
 
@@ -31,7 +43,8 @@ async function createTables() {
   await dataSource.query(`
     CREATE TABLE IF NOT EXISTS tenants (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      name VARCHAR(255) NOT NULL,
+      name VARCHAR(255) NOT NULL UNIQUE,
+      domain VARCHAR(255),
       is_active BOOLEAN DEFAULT true,
       created_at TIMESTAMP DEFAULT NOW(),
       updated_at TIMESTAMP DEFAULT NOW(),
@@ -120,6 +133,67 @@ async function createTables() {
   console.log('✅ Tables created');
 }
 
+async function seedTenant(
+  name: string,
+  domain: string,
+): Promise<string | null> {
+  const result = await dataSource.query(
+    `INSERT INTO tenants (name, domain, is_active) VALUES ($1, $2, true)
+     ON CONFLICT (name) DO UPDATE SET domain = EXCLUDED.domain, is_active = true
+     RETURNING id`,
+    [name, domain],
+  );
+  return result[0]?.id || null;
+}
+
+async function seedUser(
+  dataSource: DataSource,
+  user: SeedUser,
+  tenantMap: Record<string, string>,
+  roleMap: Record<string, number>,
+): Promise<void> {
+  const passwordHash = await bcrypt.hash(user.password, 10);
+  const tenantId =
+    user.tenantId || (user.tenantName ? tenantMap[user.tenantName] : null);
+
+  await dataSource.query(
+    `INSERT INTO users (
+      username, password_hash, tenant_id, is_active,
+      first_name, last_name, email, phone,
+      password_changed_at
+    ) VALUES ($1, $2, $3, true, $4, $5, $6, $7, NOW())
+    ON CONFLICT (username) DO UPDATE SET
+      password_hash = EXCLUDED.password_hash,
+      first_name = EXCLUDED.first_name,
+      last_name = EXCLUDED.last_name,
+      email = EXCLUDED.email,
+      phone = EXCLUDED.phone,
+      updated_at = NOW()`,
+    [
+      user.username,
+      passwordHash,
+      tenantId,
+      user.firstName,
+      user.lastName,
+      user.email,
+      user.phone || null,
+    ],
+  );
+
+  const userRows = await dataSource.query(
+    `SELECT id FROM users WHERE username = $1 LIMIT 1`,
+    [user.username],
+  );
+
+  if (userRows[0] && roleMap[user.roleName]) {
+    await dataSource.query(
+      `INSERT INTO user_roles (user_id, role_id) VALUES ($1, $2)
+       ON CONFLICT (user_id, role_id) DO NOTHING`,
+      [userRows[0].id, roleMap[user.roleName]],
+    );
+  }
+}
+
 async function seed() {
   console.log('🌱 Starting database seed...');
 
@@ -145,7 +219,8 @@ async function seed() {
   console.log('📝 Creating permissions...');
   for (const perm of permissions) {
     await dataSource.query(
-      `INSERT INTO permissions (key, description) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+      `INSERT INTO permissions (key, description) VALUES ($1, $2)
+       ON CONFLICT (key) DO UPDATE SET description = EXCLUDED.description`,
       [perm.key, perm.description],
     );
   }
@@ -159,20 +234,32 @@ async function seed() {
   console.log('👤 Creating roles...');
   for (const role of roles) {
     await dataSource.query(
-      `INSERT INTO roles (name, tenant_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+      `INSERT INTO roles (name, tenant_id) VALUES ($1, $2)
+       ON CONFLICT (name, tenant_id) DO NOTHING`,
       [role.name, role.tenant_id],
     );
   }
 
-  console.log('🏢 Creating tenant...');
-  await dataSource.query(
-    `INSERT INTO tenants (name, is_active) VALUES ('Acme Corp', true) ON CONFLICT DO NOTHING`,
-  );
+  console.log('🏢 Creating tenants...');
+  const tenantMap: Record<string, string> = {};
+  const tenants = [
+    { name: 'Acme Corporation', domain: 'acme.com' },
+    { name: 'TechCorp Solutions', domain: 'techcorp.com' },
+    { name: 'Global Industries', domain: 'globalindustries.com' },
+  ];
 
-  const tenantResult = await dataSource.query(
-    `SELECT id FROM tenants WHERE name = 'Acme Corp' LIMIT 1`,
-  );
-  const tenantId = tenantResult[0]?.id;
+  for (const tenant of tenants) {
+    await dataSource.query(
+      `INSERT INTO tenants (name, domain, is_active) VALUES ($1, $2, true)
+       ON CONFLICT DO NOTHING`,
+      [tenant.name, tenant.domain],
+    );
+  }
+
+  const tenantResult = await dataSource.query(`SELECT id, name FROM tenants`);
+  tenantResult.forEach((t: any) => {
+    tenantMap[t.name] = t.id;
+  });
 
   const roleRows = await dataSource.query(
     `SELECT id, name FROM roles WHERE tenant_id IS NULL`,
@@ -207,7 +294,8 @@ async function seed() {
       const permId = permMap[permKey];
       if (permId) {
         await dataSource.query(
-          `INSERT INTO role_permissions (role_id, permission_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+          `INSERT INTO role_permissions (role_id, permission_id) VALUES ($1, $2)
+           ON CONFLICT (role_id, permission_id) DO NOTHING`,
           [roleId, permId],
         );
       }
@@ -215,58 +303,223 @@ async function seed() {
   }
 
   console.log('👨‍💻 Creating users...');
-  const users = [
+  const users: SeedUser[] = [
     {
       username: 'superadmin',
-      password: 'admin123',
+      password: 'Admin@123',
       roleName: 'SUPER_ADMIN',
       tenantId: null,
+      firstName: 'System',
+      lastName: 'Administrator',
+      email: 'admin@system.com',
     },
     {
-      username: 'companyadmin',
-      password: 'admin123',
+      username: 'admin.smith',
+      password: 'Admin@123',
       roleName: 'COMPANY_ADMIN',
-      tenantId: tenantId,
+      tenantName: 'Acme Corporation',
+      firstName: 'John',
+      lastName: 'Smith',
+      email: 'john.smith@acme.com',
     },
     {
-      username: 'clientuser',
-      password: 'client123',
+      username: 'admin.jones',
+      password: 'Admin@123',
+      roleName: 'COMPANY_ADMIN',
+      tenantName: 'Acme Corporation',
+      firstName: 'Sarah',
+      lastName: 'Jones',
+      email: 'sarah.jones@acme.com',
+    },
+    {
+      username: 'user.alice',
+      password: 'User@123',
       roleName: 'CLIENT',
-      tenantId: tenantId,
+      tenantName: 'Acme Corporation',
+      firstName: 'Alice',
+      lastName: 'Johnson',
+      email: 'alice.johnson@acme.com',
+    },
+    {
+      username: 'user.bob',
+      password: 'User@123',
+      roleName: 'CLIENT',
+      tenantName: 'Acme Corporation',
+      firstName: 'Bob',
+      lastName: 'Williams',
+      email: 'bob.williams@acme.com',
+    },
+    {
+      username: 'user.carol',
+      password: 'User@123',
+      roleName: 'CLIENT',
+      tenantName: 'Acme Corporation',
+      firstName: 'Carol',
+      lastName: 'Davis',
+      email: 'carol.davis@acme.com',
+    },
+    {
+      username: 'user.david',
+      password: 'User@123',
+      roleName: 'CLIENT',
+      tenantName: 'Acme Corporation',
+      firstName: 'David',
+      lastName: 'Miller',
+      email: 'david.miller@acme.com',
+    },
+    {
+      username: 'user.emma',
+      password: 'User@123',
+      roleName: 'CLIENT',
+      tenantName: 'Acme Corporation',
+      firstName: 'Emma',
+      lastName: 'Wilson',
+      email: 'emma.wilson@acme.com',
+    },
+    {
+      username: 'user.frank',
+      password: 'User@123',
+      roleName: 'CLIENT',
+      tenantName: 'Acme Corporation',
+      firstName: 'Frank',
+      lastName: 'Moore',
+      email: 'frank.moore@acme.com',
+    },
+    {
+      username: 'user.grace',
+      password: 'User@123',
+      roleName: 'CLIENT',
+      tenantName: 'Acme Corporation',
+      firstName: 'Grace',
+      lastName: 'Taylor',
+      email: 'grace.taylor@acme.com',
+    },
+    {
+      username: 'user.henry',
+      password: 'User@123',
+      roleName: 'CLIENT',
+      tenantName: 'Acme Corporation',
+      firstName: 'Henry',
+      lastName: 'Anderson',
+      email: 'henry.anderson@acme.com',
+    },
+    {
+      username: 'admin.chen',
+      password: 'Admin@123',
+      roleName: 'COMPANY_ADMIN',
+      tenantName: 'TechCorp Solutions',
+      firstName: 'Michael',
+      lastName: 'Chen',
+      email: 'michael.chen@techcorp.com',
+    },
+    {
+      username: 'user.lisa',
+      password: 'User@123',
+      roleName: 'CLIENT',
+      tenantName: 'TechCorp Solutions',
+      firstName: 'Lisa',
+      lastName: 'Wang',
+      email: 'lisa.wang@techcorp.com',
+    },
+    {
+      username: 'user.kevin',
+      password: 'User@123',
+      roleName: 'CLIENT',
+      tenantName: 'TechCorp Solutions',
+      firstName: 'Kevin',
+      lastName: 'Brown',
+      email: 'kevin.brown@techcorp.com',
+    },
+    {
+      username: 'user.maria',
+      password: 'User@123',
+      roleName: 'CLIENT',
+      tenantName: 'TechCorp Solutions',
+      firstName: 'Maria',
+      lastName: 'Garcia',
+      email: 'maria.garcia@techcorp.com',
+    },
+    {
+      username: 'user.james',
+      password: 'User@123',
+      roleName: 'CLIENT',
+      tenantName: 'TechCorp Solutions',
+      firstName: 'James',
+      lastName: 'Martinez',
+      email: 'james.martinez@techcorp.com',
+    },
+    {
+      username: 'user.patricia',
+      password: 'User@123',
+      roleName: 'CLIENT',
+      tenantName: 'TechCorp Solutions',
+      firstName: 'Patricia',
+      lastName: 'Lee',
+      email: 'patricia.lee@techcorp.com',
+    },
+    {
+      username: 'admin.patel',
+      password: 'Admin@123',
+      roleName: 'COMPANY_ADMIN',
+      tenantName: 'Global Industries',
+      firstName: 'Raj',
+      lastName: 'Patel',
+      email: 'raj.patel@globalindustries.com',
+    },
+    {
+      username: 'user.thomas',
+      password: 'User@123',
+      roleName: 'CLIENT',
+      tenantName: 'Global Industries',
+      firstName: 'Thomas',
+      lastName: 'Johnson',
+      email: 'thomas.johnson@globalindustries.com',
+    },
+    {
+      username: 'user.jennifer',
+      password: 'User@123',
+      roleName: 'CLIENT',
+      tenantName: 'Global Industries',
+      firstName: 'Jennifer',
+      lastName: 'White',
+      email: 'jennifer.white@globalindustries.com',
+    },
+    {
+      username: 'user.robert',
+      password: 'User@123',
+      roleName: 'CLIENT',
+      tenantName: 'Global Industries',
+      firstName: 'Robert',
+      lastName: 'Harris',
+      email: 'robert.harris@globalindustries.com',
+    },
+    {
+      username: 'user.amanda',
+      password: 'User@123',
+      roleName: 'CLIENT',
+      tenantName: 'Global Industries',
+      firstName: 'Amanda',
+      lastName: 'Clark',
+      email: 'amanda.clark@globalindustries.com',
     },
   ];
 
   for (const user of users) {
-    const passwordHash = await bcrypt.hash(user.password, 10);
-    await dataSource.query(
-      `INSERT INTO users (username, password_hash, tenant_id, is_active) 
-       VALUES ($1, $2, $3, true) 
-       ON CONFLICT (username) DO NOTHING`,
-      [user.username, passwordHash, user.tenantId],
-    );
-
-    const userRows = await dataSource.query(
-      `SELECT id FROM users WHERE username = $1 LIMIT 1`,
-      [user.username],
-    );
-
-    if (userRows[0]) {
-      const roleId = roleMap[user.roleName];
-      if (roleId) {
-        await dataSource.query(
-          `INSERT INTO user_roles (user_id, role_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
-          [userRows[0].id, roleId],
-        );
-      }
-    }
+    await seedUser(dataSource, user, tenantMap, roleMap);
   }
 
   console.log('✅ Seed completed successfully!');
   console.log('');
   console.log('Default users:');
-  console.log('  superadmin / admin123 (SUPER_ADMIN)');
-  console.log('  companyadmin / admin123 (COMPANY_ADMIN)');
-  console.log('  clientuser / client123 (CLIENT)');
+  console.log('  superadmin / Admin@123 (SUPER_ADMIN - global)');
+  console.log('  admin.smith / Admin@123 (COMPANY_ADMIN - Acme Corp)');
+  console.log('  admin.jones / Admin@123 (COMPANY_ADMIN - Acme Corp)');
+  console.log('  admin.chen / Admin@123 (COMPANY_ADMIN - TechCorp)');
+  console.log('  admin.patel / Admin@123 (COMPANY_ADMIN - Global Industries)');
+  console.log('  ... 17 regular users with User@123');
+  console.log('');
+  console.log('Tenants created:');
+  tenants.forEach((t) => console.log(`  - ${t.name}`));
 
   await dataSource.destroy();
 }
