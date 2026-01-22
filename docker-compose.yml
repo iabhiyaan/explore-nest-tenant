@@ -1,5 +1,6 @@
 services:
   app:
+    env_file: .env
     build:
       context: .
       dockerfile: Dockerfile
@@ -24,6 +25,7 @@ services:
     restart: unless-stopped
 
   postgres:
+    env_file: .env
     image: postgres:15-alpine
     container_name: cloud-sansar-postgres
     environment:
