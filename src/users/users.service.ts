@@ -7,15 +7,21 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Like, In } from 'typeorm';
 import * as bcrypt from 'bcrypt';
-import { User } from '../database/entities';
+import { User, Role } from '../database/entities';
 import { CreateUserDto, UpdateUserDto } from './dto';
 import { PaginationQueryDto } from '../common/dto';
+import {
+  isSuperAdmin,
+  canManageCompanyAdmins,
+} from '../common/utils/authorization';
 
 @Injectable()
 export class UsersService {
   constructor(
     @InjectRepository(User)
     private userRepository: Repository<User>,
+    @InjectRepository(Role)
+    private roleRepository: Repository<Role>,
   ) {}
 
   async create(createUserDto: CreateUserDto, currentUser: any) {
@@ -39,6 +45,31 @@ export class UsersService {
 
     await this.userRepository.save(user);
 
+    if (createUserDto.roleIds && createUserDto.roleIds.length > 0) {
+      const roles = await this.roleRepository.findBy({
+        id: In(createUserDto.roleIds),
+      });
+
+      for (const role of roles) {
+        const roleName = role.name;
+
+        if (roleName === 'SUPER_ADMIN' && !isSuperAdmin(currentUser.roles)) {
+          throw new ForbiddenException(
+            'Only SUPER_ADMIN can assign SUPER_ADMIN role',
+          );
+        }
+
+        if (
+          roleName === 'COMPANY_ADMIN' &&
+          !canManageCompanyAdmins(currentUser)
+        ) {
+          throw new ForbiddenException(
+            'MANAGE_COMPANY_ADMINS permission required to assign COMPANY_ADMIN role',
+          );
+        }
+      }
+    }
+
     return this.findOne(user.id, currentUser);
   }
 
@@ -48,7 +79,7 @@ export class UsersService {
 
     const whereCondition: any = {};
 
-    if (currentUser.roles.includes('SUPER_ADMIN')) {
+    if (isSuperAdmin(currentUser.roles)) {
       if (search) {
         whereCondition.username = Like(`%${search}%`);
       }
@@ -67,8 +98,29 @@ export class UsersService {
       relations: ['userRoles', 'userRoles.role'],
     });
 
+    const filteredUsers = users.filter((user) => {
+      const userRoles = user.userRoles?.map((ur) => ur.role?.name) || [];
+
+      if (isSuperAdmin(currentUser.roles)) {
+        return true;
+      }
+
+      if (userRoles.includes('SUPER_ADMIN')) {
+        return false;
+      }
+
+      if (
+        userRoles.includes('COMPANY_ADMIN') &&
+        !canManageCompanyAdmins(currentUser)
+      ) {
+        return false;
+      }
+
+      return true;
+    });
+
     return {
-      data: users.map((user) => ({
+      data: filteredUsers.map((user) => ({
         id: user.id,
         username: user.username,
         tenantId: user.tenantId,
@@ -77,10 +129,10 @@ export class UsersService {
         roles: user.userRoles?.map((ur) => ur.role?.name) || [],
       })),
       meta: {
-        total,
+        total: filteredUsers.length,
         page,
         limit,
-        totalPages: Math.ceil(total / limit),
+        totalPages: Math.ceil(filteredUsers.length / limit),
       },
     };
   }
@@ -95,8 +147,23 @@ export class UsersService {
       throw new NotFoundException('User not found');
     }
 
+    const userRoles = user.getRoleNames();
+
+    if (isSuperAdmin(userRoles) && !isSuperAdmin(currentUser.roles)) {
+      throw new ForbiddenException('Cannot access SUPER_ADMIN accounts');
+    }
+
     if (
-      !currentUser.roles.includes('SUPER_ADMIN') &&
+      userRoles.includes('COMPANY_ADMIN') &&
+      !canManageCompanyAdmins(currentUser)
+    ) {
+      throw new ForbiddenException(
+        'MANAGE_COMPANY_ADMINS permission required to access COMPANY_ADMIN accounts',
+      );
+    }
+
+    if (
+      !isSuperAdmin(currentUser.roles) &&
       user.tenantId !== currentUser.tenantId
     ) {
       throw new ForbiddenException('Access denied to this user');
@@ -118,14 +185,32 @@ export class UsersService {
   }
 
   async update(id: string, updateUserDto: UpdateUserDto, currentUser: any) {
-    const user = await this.userRepository.findOne({ where: { id } });
+    const user = await this.userRepository.findOne({
+      where: { id },
+      relations: ['userRoles', 'userRoles.role'],
+    });
 
     if (!user) {
       throw new NotFoundException('User not found');
     }
 
+    const userRoles = user.getRoleNames();
+
+    if (isSuperAdmin(userRoles) && !isSuperAdmin(currentUser.roles)) {
+      throw new ForbiddenException('Cannot modify SUPER_ADMIN accounts');
+    }
+
     if (
-      !currentUser.roles.includes('SUPER_ADMIN') &&
+      userRoles.includes('COMPANY_ADMIN') &&
+      !canManageCompanyAdmins(currentUser)
+    ) {
+      throw new ForbiddenException(
+        'MANAGE_COMPANY_ADMINS permission required to modify COMPANY_ADMIN accounts',
+      );
+    }
+
+    if (
+      !isSuperAdmin(currentUser.roles) &&
       user.tenantId !== currentUser.tenantId
     ) {
       throw new ForbiddenException('Access denied to this user');
@@ -144,14 +229,32 @@ export class UsersService {
   }
 
   async remove(id: string, currentUser: any) {
-    const user = await this.userRepository.findOne({ where: { id } });
+    const user = await this.userRepository.findOne({
+      where: { id },
+      relations: ['userRoles', 'userRoles.role'],
+    });
 
     if (!user) {
       throw new NotFoundException('User not found');
     }
 
+    const userRoles = user.getRoleNames();
+
+    if (isSuperAdmin(userRoles)) {
+      throw new ForbiddenException('Cannot deactivate SUPER_ADMIN accounts');
+    }
+
     if (
-      !currentUser.roles.includes('SUPER_ADMIN') &&
+      userRoles.includes('COMPANY_ADMIN') &&
+      !canManageCompanyAdmins(currentUser)
+    ) {
+      throw new ForbiddenException(
+        'MANAGE_COMPANY_ADMINS permission required to deactivate COMPANY_ADMIN accounts',
+      );
+    }
+
+    if (
+      !isSuperAdmin(currentUser.roles) &&
       user.tenantId !== currentUser.tenantId
     ) {
       throw new ForbiddenException('Access denied to this user');

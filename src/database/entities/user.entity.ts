@@ -77,4 +77,27 @@ export class User {
 
   @OneToMany(() => UserRole, (userRole) => userRole.user)
   userRoles: UserRole[];
+
+  getRoleNames(): string[] {
+    return this.userRoles?.map((ur) => ur.role?.name).filter(Boolean) || [];
+  }
+
+  hasRole(roleName: string): boolean {
+    return this.getRoleNames().includes(roleName);
+  }
+
+  isSuperAdmin(): boolean {
+    return this.hasRole('SUPER_ADMIN');
+  }
+
+  isCompanyAdmin(): boolean {
+    return this.hasRole('COMPANY_ADMIN');
+  }
+
+  getRoleLevel(): number {
+    const roles = this.getRoleNames();
+    if (roles.includes('SUPER_ADMIN')) return 3;
+    if (roles.includes('COMPANY_ADMIN')) return 2;
+    return 1;
+  }
 }

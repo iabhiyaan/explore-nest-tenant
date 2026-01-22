@@ -3,12 +3,13 @@ import {
   UnauthorizedException,
   NotFoundException,
   ConflictException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, MoreThanOrEqual } from 'typeorm';
 import * as bcrypt from 'bcrypt';
-import { User } from '../database/entities';
+import { User, Tenant } from '../database/entities';
 import { LoginDto } from './dto/login.dto';
 
 @Injectable()
@@ -16,6 +17,8 @@ export class AuthService {
   constructor(
     @InjectRepository(User)
     private userRepository: Repository<User>,
+    @InjectRepository(Tenant)
+    private tenantRepository: Repository<Tenant>,
     private jwtService: JwtService,
   ) {}
 
@@ -27,6 +30,7 @@ export class AuthService {
         'userRoles.role',
         'userRoles.role.rolePermissions',
         'userRoles.role.rolePermissions.permission',
+        'tenant',
       ],
     });
 
@@ -34,17 +38,51 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
+    const isLocked = user.lockedUntil && user.lockedUntil > new Date();
+    if (isLocked) {
+      throw new UnauthorizedException(
+        `Account is locked. Try again after ${user.lockedUntil.toISOString()}`,
+      );
+    }
+
     if (!user.isActive) {
       throw new UnauthorizedException('Account is deactivated');
+    }
+
+    if (user.tenantId) {
+      const tenant = await this.tenantRepository.findOne({
+        where: { id: user.tenantId },
+      });
+
+      if (!tenant) {
+        throw new UnauthorizedException('Tenant not found');
+      }
+
+      if (!tenant.isActive) {
+        throw new UnauthorizedException('Tenant is deactivated');
+      }
     }
 
     const isPasswordValid = await bcrypt.compare(
       loginDto.password,
       user.passwordHash,
     );
+
     if (!isPasswordValid) {
+      user.loginAttempts = (user.loginAttempts || 0) + 1;
+
+      if (user.loginAttempts >= 5) {
+        user.lockedUntil = new Date(Date.now() + 15 * 60 * 1000);
+      }
+
+      await this.userRepository.save(user);
       throw new UnauthorizedException('Invalid credentials');
     }
+
+    user.loginAttempts = 0;
+    user.lockedUntil = null as any;
+    user.lastLoginAt = new Date();
+    await this.userRepository.save(user);
 
     const permissions =
       user.userRoles
@@ -70,8 +108,10 @@ export class AuthService {
         id: user.id,
         username: user.username,
         tenantId: user.tenantId,
+        tenantName: user.tenant?.name,
         roles: user.userRoles?.map((ur) => ur.role?.name) || [],
         permissions,
+        lastLogin: user.lastLoginAt,
       },
     };
   }

@@ -1,7 +1,13 @@
-import { Injectable, CanActivate, ExecutionContext } from '@nestjs/common';
+import {
+  Injectable,
+  CanActivate,
+  ExecutionContext,
+  ForbiddenException,
+} from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { ROLES_KEY } from '../decorators/roles.decorator';
+import { ROLES_KEY, ROLE_AT_LEAST_KEY } from '../decorators/roles.decorator';
 import { PERMISSIONS_KEY } from '../decorators/permissions.decorator';
+import { getRoleLevel } from '../utils/authorization';
 
 @Injectable()
 export class RolesGuard implements CanActivate {
@@ -13,37 +19,53 @@ export class RolesGuard implements CanActivate {
       [context.getHandler(), context.getClass()],
     );
 
+    const requiredRoleAtLeast = this.reflector.getAllAndOverride<string>(
+      ROLE_AT_LEAST_KEY,
+      [context.getHandler(), context.getClass()],
+    );
+
     const requiredPermissions = this.reflector.getAllAndOverride<string[]>(
       PERMISSIONS_KEY,
       [context.getHandler(), context.getClass()],
     );
 
-    if (!requiredRoles && !requiredPermissions) {
+    if (!requiredRoles && !requiredRoleAtLeast && !requiredPermissions) {
       return true;
     }
 
     const { user } = context.switchToHttp().getRequest();
 
     if (!user) {
-      return false;
+      throw new ForbiddenException('Authentication required');
     }
 
-    if (
-      requiredRoles &&
-      requiredRoles.some((role) => user.roles?.includes(role))
-    ) {
-      return true;
+    if (requiredRoles && requiredRoles.length > 0) {
+      if (requiredRoles.some((role) => user.roles?.includes(role))) {
+        return true;
+      }
     }
 
-    if (
-      requiredPermissions &&
-      requiredPermissions.some((permission) =>
-        user.permissions?.includes(permission),
-      )
-    ) {
-      return true;
+    if (requiredRoleAtLeast) {
+      const userRoleLevel = Math.max(
+        ...(user.roles?.map((role: string) => getRoleLevel(role)) || [0]),
+      );
+      const requiredRoleLevel = getRoleLevel(requiredRoleAtLeast);
+
+      if (userRoleLevel >= requiredRoleLevel) {
+        return true;
+      }
     }
 
-    return false;
+    if (requiredPermissions && requiredPermissions.length > 0) {
+      if (
+        requiredPermissions.some((permission) =>
+          user.permissions?.includes(permission),
+        )
+      ) {
+        return true;
+      }
+    }
+
+    throw new ForbiddenException('Insufficient permissions');
   }
 }

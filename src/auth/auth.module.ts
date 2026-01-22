@@ -8,11 +8,11 @@ import { AuthService } from './auth.service';
 import { ProfileService } from '../users/profile.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { LocalStrategy } from './strategies/local.strategy';
-import { User } from '../database/entities';
+import { User, Tenant } from '../database/entities';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([User]),
+    TypeOrmModule.forFeature([User, Tenant]),
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.registerAsync({
       imports: [ConfigModule],
@@ -20,7 +20,7 @@ import { User } from '../database/entities';
       useFactory: (configService: ConfigService) => ({
         secret: configService.get<string>('jwt.secret') || 'default-secret',
         signOptions: {
-          expiresIn: configService.get<string>('jwt.expiresIn') || '24h',
+          expiresIn: configService.get<string>('jwt.expiresIn') || '15m',
         } as any,
       }),
     }),
