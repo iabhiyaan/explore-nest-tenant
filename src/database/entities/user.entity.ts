@@ -48,6 +48,33 @@ export class User {
   @Column({ name: 'updated_by', nullable: true })
   updatedBy: string;
 
+  @Column({ name: 'first_name', nullable: true })
+  firstName: string | null;
+
+  @Column({ name: 'last_name', nullable: true })
+  lastName: string | null;
+
+  @Column({ name: 'email', nullable: true, length: 255 })
+  email: string | null;
+
+  @Column({ name: 'phone', nullable: true, length: 50 })
+  phone: string | null;
+
+  @Column({ name: 'avatar_url', nullable: true, length: 500 })
+  avatarUrl: string | null;
+
+  @Column({ name: 'last_login_at', nullable: true })
+  lastLoginAt: Date;
+
+  @Column({ name: 'login_attempts', default: 0 })
+  loginAttempts: number;
+
+  @Column({ name: 'locked_until', nullable: true })
+  lockedUntil: Date;
+
+  @Column({ name: 'password_changed_at' })
+  passwordChangedAt: Date;
+
   @OneToMany(() => UserRole, (userRole) => userRole.user)
   userRoles: UserRole[];
 }
