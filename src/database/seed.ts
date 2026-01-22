@@ -65,6 +65,15 @@ async function createTables() {
       deleted_at TIMESTAMP,
       created_by VARCHAR(255),
       updated_by VARCHAR(255),
+      first_name VARCHAR(255),
+      last_name VARCHAR(255),
+      email VARCHAR(255),
+      phone VARCHAR(50),
+      avatar_url VARCHAR(500),
+      last_login_at TIMESTAMP,
+      login_attempts INTEGER DEFAULT 0,
+      locked_until TIMESTAMP,
+      password_changed_at TIMESTAMP DEFAULT NOW(),
       FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE SET NULL
     )
   `);
