@@ -12,6 +12,19 @@ const dataSource = new DataSource({
   logging: false,
 });
 
+async function clearData() {
+  console.log('🗑️  Clearing existing data...');
+
+  await dataSource.query(`DELETE FROM user_roles`);
+  await dataSource.query(`DELETE FROM role_permissions`);
+  await dataSource.query(`DELETE FROM users`);
+  await dataSource.query(`DELETE FROM roles`);
+  await dataSource.query(`DELETE FROM permissions`);
+  await dataSource.query(`DELETE FROM tenants`);
+
+  console.log('✅ Existing data cleared');
+}
+
 async function createTables() {
   console.log('📦 Creating tables...');
 
@@ -114,6 +127,7 @@ async function seed() {
   console.log('✅ Database connected');
 
   await createTables();
+  await clearData();
 
   const permissions = [
     { key: 'MANAGE_COMPANIES', description: 'Can manage companies/tenants' },
