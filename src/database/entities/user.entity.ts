@@ -48,19 +48,19 @@ export class User {
   @Column({ name: 'updated_by', nullable: true })
   updatedBy: string;
 
-  @Column({ name: 'first_name', nullable: true })
+  @Column({ name: 'first_name', nullable: true, type: 'varchar', length: 255 })
   firstName: string | null;
 
-  @Column({ name: 'last_name', nullable: true })
+  @Column({ name: 'last_name', nullable: true, type: 'varchar', length: 255 })
   lastName: string | null;
 
-  @Column({ name: 'email', nullable: true, length: 255 })
+  @Column({ name: 'email', nullable: true, type: 'varchar', length: 255 })
   email: string | null;
 
-  @Column({ name: 'phone', nullable: true, length: 50 })
+  @Column({ name: 'phone', nullable: true, type: 'varchar', length: 50 })
   phone: string | null;
 
-  @Column({ name: 'avatar_url', nullable: true, length: 500 })
+  @Column({ name: 'avatar_url', nullable: true, type: 'varchar', length: 500 })
   avatarUrl: string | null;
 
   @Column({ name: 'last_login_at', nullable: true })

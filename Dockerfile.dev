@@ -5,6 +5,9 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm ci
 
+COPY tsconfig.json nest-cli.json tsconfig.build.json ./
+COPY scripts ./scripts
+
 EXPOSE 3000 9229
 
 CMD ["npm", "run", "start:dev"]

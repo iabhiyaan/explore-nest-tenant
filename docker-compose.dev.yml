@@ -4,7 +4,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.dev
-    container_name: cloud-sansar-api-dev
+    container_name: explore-nest-tenant-api-dev
     ports:
       - '3000:3000'
       - '9229:9229'
@@ -15,10 +15,11 @@ services:
       - DB_PORT=5432
       - DB_USERNAME=${DB_USERNAME:-postgres}
       - DB_PASSWORD=${DB_PASSWORD}
-      - DB_DATABASE=${DB_DATABASE:-cloud_sansar}
+      - DB_DATABASE=${DB_DATABASE:-explore_nest_tenant}
       - JWT_SECRET=${JWT_SECRET}
       - JWT_EXPIRES_IN=${JWT_EXPIRES_IN:-24h}
       - LOG_LEVEL=debug
+      - TYPEORM_SYNCHRONIZE=false
     volumes:
       - ./src:/app/src
     depends_on:

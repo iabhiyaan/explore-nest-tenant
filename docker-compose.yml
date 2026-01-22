@@ -4,7 +4,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: cloud-sansar-api
+    container_name: explore-nest-tenant-api
     ports:
       - '3000:3000'
     environment:
@@ -14,7 +14,7 @@ services:
       - DB_PORT=5432
       - DB_USERNAME=${DB_USERNAME:-postgres}
       - DB_PASSWORD=${DB_PASSWORD}
-      - DB_DATABASE=${DB_DATABASE:-cloud_sansar}
+      - DB_DATABASE=${DB_DATABASE:-explore_nest_tenant}
       - JWT_SECRET=${JWT_SECRET}
       - JWT_EXPIRES_IN=${JWT_EXPIRES_IN:-1d}
     depends_on:
@@ -27,11 +27,11 @@ services:
   postgres:
     env_file: .env
     image: postgres:15-alpine
-    container_name: cloud-sansar-postgres
+    container_name: explore-nest-tenant-postgres
     environment:
       - POSTGRES_USER=${DB_USERNAME:-postgres}
       - POSTGRES_PASSWORD=${DB_PASSWORD}
-      - POSTGRES_DB=${DB_DATABASE:-cloud_sansar}
+      - POSTGRES_DB=${DB_DATABASE:-explore_nest_tenant}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:

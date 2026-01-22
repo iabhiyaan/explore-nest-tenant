@@ -75,7 +75,8 @@ const validateEnv = (envConfig: Record<string, unknown>): EnvVariables => {
         database: configService.get<string>('database.name'),
         entities: [User, Tenant, Role, Permission, UserRole, RolePermission],
         synchronize:
-          configService.get<string>('app.environment') !== 'production',
+          configService.get<string>('app.environment') !== 'production' &&
+          process.env.TYPEORM_SYNCHRONIZE !== 'false',
         logging: configService.get<string>('app.environment') === 'development',
       }),
     }),
