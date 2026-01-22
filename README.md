@@ -68,6 +68,20 @@ nvm use && npm run seed
 nvm use && npm run start:dev
 ```
 
+## With Partial Docker (Database in Docker)
+
+```bash
+# Start PostgreSQL with Docker
+docker compose up -d postgres
+
+# update .env 
+DB_HOST=localhost (if not already set or have different host value than localhost)
+
+# Start development server with hot reload
+nvm use && npm run start:dev
+```
+
+
 ### Production
 
 ```bash
