@@ -1,0 +1,42 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: cloud-sansar-api-dev
+    ports:
+      - '3000:3000'
+      - '9229:9229'
+    environment:
+      - NODE_ENV=development
+      - PORT=3000
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USERNAME=${DB_USERNAME:-postgres}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_DATABASE=${DB_DATABASE:-cloud_sansar}
+      - JWT_SECRET=${JWT_SECRET}
+      - JWT_EXPIRES_IN=${JWT_EXPIRES_IN:-24h}
+      - LOG_LEVEL=debug
+    volumes:
+      - ./src:/app/src
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - sansar-network
+    restart: unless-stopped
+
+  postgres:
+    extends:
+      file: docker-compose.yml
+      service: postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+networks:
+  sansar-network:
+    external: true
+
+volumes:
+  postgres_data:
