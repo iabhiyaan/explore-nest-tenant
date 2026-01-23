@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, MoreThanOrEqual } from 'typeorm';
+import { Repository, IsNull } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import { User, Tenant } from '../database/entities';
 import { LoginDto } from './dto/login.dto';
@@ -36,10 +36,12 @@ export class AuthService {
       }
     }
 
-    // Load user (optionally scoped to tenant)
+    // Load user (scoped to tenant or global)
     const userWhere: any = { username: loginDto.username };
     if (loginDto.tenantId) {
       userWhere.tenantId = loginDto.tenantId;
+    } else {
+      userWhere.tenantId = IsNull();
     }
 
     const user = await this.userRepository.findOne({
