@@ -23,8 +23,27 @@ export class AuthService {
   ) {}
 
   async login(loginDto: LoginDto) {
+    // Validate tenant first (if provided)
+    if (loginDto.tenantId) {
+      const tenant = await this.tenantRepository.findOne({
+        where: { id: loginDto.tenantId },
+      });
+      if (!tenant) {
+        throw new UnauthorizedException('Invalid tenant ID');
+      }
+      if (!tenant.isActive) {
+        throw new UnauthorizedException('Tenant is deactivated');
+      }
+    }
+
+    // Load user (optionally scoped to tenant)
+    const userWhere: any = { username: loginDto.username };
+    if (loginDto.tenantId) {
+      userWhere.tenantId = loginDto.tenantId;
+    }
+
     const user = await this.userRepository.findOne({
-      where: { username: loginDto.username },
+      where: userWhere,
       relations: [
         'userRoles',
         'userRoles.role',
@@ -38,47 +57,40 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
+    // Tenant validity for loaded user
+    if (user.tenantId) {
+      const tenant = user.tenant;
+      if (!tenant || !tenant.isActive) {
+        throw new UnauthorizedException('Tenant is deactivated');
+      }
+    }
+
+    // Lock and active checks
     const isLocked = user.lockedUntil && user.lockedUntil > new Date();
     if (isLocked) {
       throw new UnauthorizedException(
         `Account is locked. Try again after ${user.lockedUntil.toISOString()}`,
       );
     }
-
     if (!user.isActive) {
       throw new UnauthorizedException('Account is deactivated');
     }
 
-    if (user.tenantId) {
-      const tenant = await this.tenantRepository.findOne({
-        where: { id: user.tenantId },
-      });
-
-      if (!tenant) {
-        throw new UnauthorizedException('Tenant not found');
-      }
-
-      if (!tenant.isActive) {
-        throw new UnauthorizedException('Tenant is deactivated');
-      }
-    }
-
+    // Password validation
     const isPasswordValid = await bcrypt.compare(
       loginDto.password,
       user.passwordHash,
     );
-
     if (!isPasswordValid) {
       user.loginAttempts = (user.loginAttempts || 0) + 1;
-
       if (user.loginAttempts >= 5) {
         user.lockedUntil = new Date(Date.now() + 15 * 60 * 1000);
       }
-
       await this.userRepository.save(user);
       throw new UnauthorizedException('Invalid credentials');
     }
 
+    // Successful login: reset counters and generate token
     user.loginAttempts = 0;
     user.lockedUntil = null as any;
     user.lastLoginAt = new Date();
