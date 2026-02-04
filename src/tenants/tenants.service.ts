@@ -40,7 +40,9 @@ export class TenantsService {
     const { page = 1, limit = 10, search } = query;
     const skip = (page - 1) * limit;
 
-    const whereCondition: any = {};
+    const whereCondition: any = {
+      isActive: true,
+    };
     if (search) {
       whereCondition.name = Like(`%${search}%`);
     }
